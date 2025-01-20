@@ -1,7 +1,6 @@
 use super::models::*;
-use dashmap::DashMap;
 use rust_decimal::Decimal;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 use chrono::Utc;
 
@@ -10,7 +9,7 @@ pub struct OrderBook {
     instrument_id: Uuid,
     bids: BTreeMap<Decimal, Vec<Order>>,
     asks: BTreeMap<Decimal, Vec<Order>>,
-    orders: DashMap<Uuid, Order>,
+    orders: HashMap<Uuid, Order>,
 }
 
 impl OrderBook {
@@ -19,7 +18,7 @@ impl OrderBook {
             instrument_id,
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
-            orders: DashMap::new(),
+            orders: HashMap::new(),
         }
     }
 
@@ -37,7 +36,7 @@ impl OrderBook {
 
     fn process_limit_order(&mut self, mut order: Order, trades: &mut Vec<Trade>) {
         let price = order.price.expect("Limit orders must have a price");
-        let side = order.side.clone(); // Clone the side here to avoid move issues
+        let side = order.side.clone();
 
         loop {
             let matching_order_opt = match side {
@@ -49,7 +48,6 @@ impl OrderBook {
                 Some((best_price, matched_order)) if self.prices_match(side.clone(), price, best_price) => {
                     let trade_quantity = order.remaining_quantity.min(matched_order.remaining_quantity);
 
-                    // Create and add trade
                     trades.push(self.create_trade(
                         &order,
                         &matched_order,
@@ -57,7 +55,6 @@ impl OrderBook {
                         trade_quantity
                     ));
 
-                    // Update order quantities and status
                     order.remaining_quantity -= trade_quantity;
                     order.status = if order.remaining_quantity == Decimal::ZERO {
                         OrderStatus::FILLED
@@ -65,7 +62,6 @@ impl OrderBook {
                         OrderStatus::PARTIAL
                     };
 
-                    // Update matched order
                     self.update_matched_order(&matched_order, trade_quantity, best_price, side.clone());
 
                     if order.remaining_quantity == Decimal::ZERO {
@@ -76,7 +72,6 @@ impl OrderBook {
             }
         }
 
-        // Add remaining order to the book if not fully filled
         if order.remaining_quantity > Decimal::ZERO {
             match side {
                 OrderSide::BUY => self.bids.entry(price)
@@ -139,9 +134,7 @@ impl OrderBook {
     }
 
     pub fn cancel_order(&mut self, order_id: Uuid) -> Option<Order> {
-        // First check if the order exists
         if let Some(order) = self.orders.get(&order_id) {
-            // Can only cancel orders that are PENDING or PARTIAL
             if order.status != OrderStatus::PENDING && order.status != OrderStatus::PARTIAL {
                 return None;
             }
@@ -149,22 +142,18 @@ impl OrderBook {
             let price = order.price.expect("Order should have a price");
             let side = order.side.clone();
 
-            // Remove the order from the appropriate book
             let book = match side {
                 OrderSide::BUY => &mut self.bids,
                 OrderSide::SELL => &mut self.asks,
             };
 
             if let Some(orders) = book.get_mut(&price) {
-                // Find and remove the order from the price level
                 if let Some(pos) = orders.iter().position(|o| o.id == order_id) {
                     let cancelled_order = orders.remove(pos);
-                    // If no more orders at this price, remove the price level
                     if orders.is_empty() {
                         book.remove(&price);
                     }
 
-                    // Update the order status in the orders map
                     let mut updated_order = cancelled_order.clone();
                     updated_order.status = OrderStatus::CANCELLED;
                     self.orders.insert(order_id, updated_order.clone());
@@ -175,6 +164,7 @@ impl OrderBook {
         }
         None
     }
+
     fn get_best_ask(&mut self) -> Option<(Decimal, Order)> {
         if let Some((&price, orders)) = self.asks.iter_mut().next() {
             if !orders.is_empty() {
@@ -215,7 +205,6 @@ impl OrderBook {
             }
         }
 
-        // Update the matched order in the orders map
         let mut updated_order = matched_order.clone();
         updated_order.remaining_quantity -= trade_quantity;
         updated_order.status = if updated_order.remaining_quantity == Decimal::ZERO {
