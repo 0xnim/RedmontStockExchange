@@ -288,6 +288,14 @@ mod tests {
         println!("   └─ Seller Order: {}", trade.seller_order_id);
     }
 
+    // Helper function to visualize the order book state
+    fn visualize_order_book_state(order_book: &OrderBook) {
+        println!("\n📚 Order Book State:");
+        println!("   ├─ Bids: {:?}", order_book.bids);
+        println!("   ├─ Asks: {:?}", order_book.asks);
+        println!("   └─ Orders: {:?}", order_book.orders);
+    }
+
     fn create_test_order(
         id: &str,
         broker_id: &str,
@@ -510,6 +518,8 @@ mod tests {
 
     #[test]
     fn test_cancel_pending_order() {
+        print_separator("Cancel Pending Order");
+
         let instrument_id = Uuid::from_str("00000000-0000-0000-0000-000000000001").unwrap();
         let mut order_book = OrderBook::new(instrument_id);
 
@@ -529,10 +539,16 @@ mod tests {
         };
 
         let order_id = sell_order.id;
+        visualize_order("SELL", &sell_order);
+
         order_book.add_order(sell_order);
+        visualize_order_book_state(&order_book);
 
         // Cancel the order
         let cancelled_order = order_book.cancel_order(order_id).unwrap();
+        visualize_order("CANCELLED", &cancelled_order);
+
+        visualize_order_book_state(&order_book);
 
         assert_eq!(cancelled_order.status, OrderStatus::CANCELLED);
         assert_eq!(cancelled_order.remaining_quantity, dec!(10.0));
@@ -541,6 +557,8 @@ mod tests {
 
     #[test]
     fn test_cancel_partially_filled_order() {
+        print_separator("Cancel Partially Filled Order");
+
         let instrument_id = Uuid::from_str("00000000-0000-0000-0000-000000000001").unwrap();
         let mut order_book = OrderBook::new(instrument_id);
 
@@ -560,6 +578,8 @@ mod tests {
         };
 
         let sell_order_id = sell_order.id;
+        visualize_order("SELL", &sell_order);
+
         order_book.add_order(sell_order);
 
         // Create a partial matching buy order
@@ -577,11 +597,17 @@ mod tests {
             updated_at: Utc::now(),
         };
 
+        visualize_order("BUY", &buy_order);
+
         // This should partially fill the sell order
         order_book.add_order(buy_order);
+        visualize_order_book_state(&order_book);
 
         // Cancel the partially filled sell order
         let cancelled_order = order_book.cancel_order(sell_order_id).unwrap();
+        visualize_order("CANCELLED", &cancelled_order);
+
+        visualize_order_book_state(&order_book);
 
         assert_eq!(cancelled_order.status, OrderStatus::CANCELLED);
         assert_eq!(cancelled_order.remaining_quantity, dec!(4.0));
@@ -590,6 +616,8 @@ mod tests {
 
     #[test]
     fn test_cancel_filled_order() {
+        print_separator("Cancel Filled Order");
+
         let instrument_id = Uuid::from_str("00000000-0000-0000-0000-000000000001").unwrap();
         let mut order_book = OrderBook::new(instrument_id);
 
@@ -609,10 +637,20 @@ mod tests {
         };
 
         let order_id = sell_order.id;
+        visualize_order("SELL", &sell_order);
+
         order_book.add_order(sell_order);
+        visualize_order_book_state(&order_book);
 
         // Attempt to cancel the filled order
         let cancelled_order = order_book.cancel_order(order_id);
+
+        if cancelled_order.is_none() {
+            println!("\n➡️ Attempt to Cancel Filled Order:");
+            println!("   └─ No order was cancelled (expected behavior).");
+        }
+
+        visualize_order_book_state(&order_book);
 
         assert!(cancelled_order.is_none());
     }
